@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>알까기 FC — 프로토타입</title>
+<style>
+  :root{
+    --turf-dark:#12351f;
+    --turf-light:#1d4a2b;
+    --chalk:#eef3e8;
+    --stone-black:#141414;
+    --stone-black-hi:#3a3a3a;
+    --stone-white:#f6f3ea;
+    --stone-white-sh:#c9c4b4;
+    --gold:#d9a441;
+    --panel:#0d1f14;
+    --panel-2:#153524;
+    --red-team:#c0392b;
+    --blue-team:#1f5aa6;
+    --font-display:'Rokkitt','Georgia',serif;
+    --font-body:'Pretendard','Noto Sans KR',sans-serif;
+    --font-mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; background:#08130c; color:var(--chalk);
+    font-family:var(--font-body); overflow:hidden;
+  }
+  #app{position:relative; width:100%; height:100vh; min-height:600px;}
+  .screen{
+    position:absolute; inset:0; display:none;
+    animation: fadeIn .35s ease;
+  }
+  .screen.active{display:flex;}
+  @keyframes fadeIn{from{opacity:0; transform:scale(.985);} to{opacity:1; transform:scale(1);}}
+
+  /* ---------- MAIN MENU ---------- */
+  #menu-screen{
+    flex-direction:column; align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse at 50% -10%, #234f31 0%, transparent 55%),
+      repeating-linear-gradient(90deg, var(--turf-dark) 0 64px, var(--turf-light) 64px 128px);
+    position:relative;
+  }
+  #menu-screen::before{
+    content:"";
+    position:absolute; inset:6%;
+    border:2px solid rgba(238,243,232,.18);
+    border-radius:4px;
+    pointer-events:none;
+  }
+  .menu-eyebrow{
+    font-family:var(--font-mono); letter-spacing:.35em; font-size:11px;
+    color:var(--gold); text-transform:uppercase; margin-bottom:14px;
+  }
+  .menu-title{
+    font-family:var(--font-display); font-weight:700; font-size:clamp(40px,7vw,86px);
+    letter-spacing:-1px; text-align:center; line-height:1;
+    color:var(--chalk);
+    text-shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+  .menu-title span{color:var(--gold);}
+  .menu-sub{
+    margin-top:16px; font-size:14px; color:#b9c9b8; letter-spacing:.02em;
+  }
+  .mode-row{
+    display:flex; gap:28px; margin-top:56px;
+  }
+  .mode-card{
+    width:220px; padding:28px 22px; text-align:left;
+    background:rgba(13,31,20,.72); border:1px solid rgba(238,243,232,.14);
+    border-radius:6px; cursor:pointer; position:relative; overflow:hidden;
+    transition:transform .18s ease, border-color .18s ease, background .18s ease;
+  }
+  .mode-card:hover{ transform:translateY(-4px); border-color:var(--gold); background:rgba(21,53,36,.85); }
+  .mode-card:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+  .mode-num{
+    font-family:var(--font-mono); font-size:11px; color:var(--gold); letter-spacing:.2em;
+  }
+  .mode-name{
+    font-family:var(--font-display); font-size:26px; margin-top:10px; color:var(--chalk);
+  }
+  .mode-desc{ margin-top:8px; font-size:12.5px; color:#9fb09e; line-height:1.5; }
+  .mode-stone{
+    position:absolute; right:-14px; bottom:-14px; width:64px; height:64px; border-radius:50%;
+    opacity:.9;
+  }
+  .stone-b{ background:radial-gradient(circle at 32% 28%, var(--stone-black-hi), var(--stone-black) 65%); box-shadow: inset 0 -4px 6px rgba(0,0,0,.6), 0 3px 5px rgba(0,0,0,.5);}
+  .stone-w{ background:radial-gradient(circle at 32% 28%, #fff, var(--stone-white-sh) 75%); box-shadow: inset 0 -3px 5px rgba(0,0,0,.15), 0 3px 5px rgba(0,0,0,.5);}
+
+  /* ---------- MATCH SCREEN ---------- */
+  #match-screen{ flex-direction:column; background:#08130c; }
+  .scorebar{
+    display:flex; align-items:stretch; height:58px; flex-shrink:0;
+    background:var(--panel); border-bottom:1px solid rgba(238,243,232,.1);
+  }
+  .team-block{ flex:1; display:flex; align-items:center; gap:12px; padding:0 26px; font-family:var(--font-display); font-size:19px; }
+  .team-block.home{ justify-content:flex-end; }
+  .team-block.away{ justify-content:flex-start; background:rgba(192,57,43,.14); }
+  .badge{ width:28px; height:28px; border-radius:50%; flex-shrink:0; }
+  .badge.home-badge{ background:linear-gradient(145deg,#2a72c9,#123a63); box-shadow:0 0 0 2px rgba(238,243,232,.2) inset;}
+  .badge.away-badge{ background:linear-gradient(145deg,#d9483a,#7a1f16); box-shadow:0 0 0 2px rgba(238,243,232,.2) inset;}
+  .score-center{
+    width:220px; flex-shrink:0; display:flex; align-items:center; justify-content:center; gap:14px;
+    font-family:var(--font-mono); background:var(--panel-2);
+  }
+  .score-num{ font-size:26px; font-weight:700; color:var(--chalk); min-width:20px; text-align:center;}
+  .clock{ font-size:14px; color:var(--gold); letter-spacing:.05em; }
+
+  .pitch-wrap{ flex:1; display:flex; align-items:center; justify-content:center; padding:22px; position:relative; }
+  #pitch{ width:min(92vw,1080px); aspect-ratio:105/68; position:relative; border-radius:3px; overflow:hidden;
+    background: repeating-linear-gradient(0deg, #1a4a2c 0 34px, #1f5533 34px 68px);
+    box-shadow:0 20px 60px rgba(0,0,0,.6);
+  }
+  .pitch-line{ position:absolute; border:2px solid rgba(238,243,232,.55); }
+  .stone{
+    position:absolute; width:3.4%; aspect-ratio:1; border-radius:50%; transform:translate(-50%,-50%);
+    transition:left .5s linear, top .5s linear;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-size:9px; font-weight:700;
+  }
+  .stone.black{ background:radial-gradient(circle at 32% 28%, var(--stone-black-hi), var(--stone-black) 65%); box-shadow: inset 0 -3px 4px rgba(0,0,0,.6), 0 2px 6px rgba(0,0,0,.6); color:#e6c976;}
+  .stone.white{ background:radial-gradient(circle at 32% 28%, #fff, var(--stone-white-sh) 75%); box-shadow: inset 0 -2px 4px rgba(0,0,0,.15), 0 2px 6px rgba(0,0,0,.6); color:#7a3d2c;}
+  .stone.controlled{ outline:2px solid var(--gold); outline-offset:2px; box-shadow:0 0 12px 2px rgba(217,164,65,.75); }
+  .ball{
+    position:absolute; width:1.5%; aspect-ratio:1; border-radius:50%; background:radial-gradient(circle at 32% 28%,#fff,#d8d2bd 70%);
+    transform:translate(-50%,-50%); box-shadow:0 2px 5px rgba(0,0,0,.6); transition:left .5s linear, top .5s linear;
+  }
+
+  .hint-bar{
+    flex-shrink:0; display:flex; justify-content:center; gap:26px; padding:10px 0;
+    background:var(--panel); font-family:var(--font-mono); font-size:11px; color:#8fa38d; letter-spacing:.02em;
+  }
+  .hint-bar kbd{ background:rgba(238,243,232,.1); border:1px solid rgba(238,243,232,.2); border-radius:3px; padding:1px 6px; color:var(--chalk); font-family:var(--font-mono);}
+
+  /* ---------- PAUSE OVERLAY ---------- */
+  .overlay{
+    position:absolute; inset:0; background:rgba(4,10,6,.72); backdrop-filter:blur(3px);
+    display:none; align-items:center; justify-content:center; z-index:20;
+  }
+  .overlay.active{ display:flex; }
+  .pause-panel{
+    width:min(920px,92vw); max-height:86vh; overflow:auto;
+    background:var(--panel); border:1px solid rgba(238,243,232,.14); border-radius:8px;
+    box-shadow:0 30px 80px rgba(0,0,0,.6);
+  }
+  .pause-header{
+    display:flex; align-items:center; justify-content:space-between; padding:22px 28px;
+    border-bottom:1px solid rgba(238,243,232,.1);
+  }
+  .pause-title{ font-family:var(--font-display); font-size:24px; }
+  .pause-score{ font-family:var(--font-mono); color:var(--gold); font-size:14px; }
+  .pause-body{ padding:26px 28px; }
+
+  .stat-row{ display:grid; grid-template-columns:1fr 90px 1fr; align-items:center; gap:10px; margin-bottom:14px; font-size:13px; }
+  .stat-label{ text-align:center; color:#9fb09e; letter-spacing:.03em; font-family:var(--font-mono); font-size:11px; text-transform:uppercase; }
+  .stat-val{ font-family:var(--font-mono); font-weight:700; }
+  .stat-val.left{ text-align:right; color:#7bb0e0; }
+  .stat-val.right{ text-align:left; color:#e08a7d; }
+  .stat-bar{ position:relative; height:4px; background:rgba(238,243,232,.12); border-radius:2px; margin-top:5px; overflow:hidden; grid-column:1/4;}
+  .stat-bar-fill{ position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg,#7bb0e0,var(--gold)); }
+
+  .pause-actions{ display:flex; gap:12px; flex-wrap:wrap; margin-top:24px; }
+  .btn{
+    font-family:var(--font-body); font-size:13.5px; font-weight:600; letter-spacing:.02em;
+    padding:12px 20px; border-radius:5px; border:1px solid rgba(238,243,232,.18);
+    background:rgba(238,243,232,.06); color:var(--chalk); cursor:pointer;
+    transition:background .15s ease, border-color .15s ease;
+  }
+  .btn:hover{ background:rgba(238,243,232,.14); border-color:rgba(238,243,232,.35); }
+  .btn.primary{ background:var(--gold); color:#1c1305; border-color:var(--gold); }
+  .btn.primary:hover{ background:#e5b458; }
+  .btn.danger{ border-color:rgba(192,57,43,.5); color:#e08a7d; }
+  .btn.danger:hover{ background:rgba(192,57,43,.18); }
+
+  /* ---------- LINEUP SCREEN ---------- */
+  #lineup-screen{ background:#08130c; flex-direction:column; }
+  .lineup-top{
+    display:flex; align-items:center; justify-content:space-between; padding:16px 26px;
+    border-bottom:1px solid rgba(238,243,232,.1); flex-shrink:0;
+  }
+  .lineup-title{ font-family:var(--font-display); font-size:22px; }
+  .lineup-body{ flex:1; display:flex; overflow:hidden; }
+  .side-col{ width:190px; flex-shrink:0; padding:22px 16px; display:flex; flex-direction:column; gap:10px; }
+  .side-col.right{ border-left:1px solid rgba(238,243,232,.08); }
+  .side-col.left{ border-right:1px solid rgba(238,243,232,.08); }
+  .side-btn{
+    text-align:left; padding:14px; border-radius:6px; border:1px solid rgba(238,243,232,.14);
+    background:var(--panel-2); cursor:pointer; color:var(--chalk); font-family:var(--font-body);
+  }
+  .side-btn small{ display:block; color:#9fb09e; font-size:11px; margin-top:4px; font-family:var(--font-mono);}
+  .side-btn:hover{ border-color:var(--gold); }
+
+  .bench-item{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:5px;
+    background:rgba(238,243,232,.04); font-size:12px; cursor:grab; border:1px solid transparent;
+  }
+  .bench-item:hover{ border-color:rgba(217,164,65,.4); background:rgba(217,164,65,.08); }
+  .bench-avatar{ width:26px; height:26px; border-radius:50%; background:linear-gradient(145deg,#3a3a3a,#141414); flex-shrink:0; }
+
+  .pitch-center{ flex:1; display:flex; align-items:center; justify-content:center; padding:20px; }
+  #formation-pitch{
+    width:min(58vw,640px); aspect-ratio:68/100; position:relative; border-radius:3px;
+    background: repeating-linear-gradient(90deg, #1a4a2c 0 34px, #1f5533 34px 68px);
+    box-shadow:0 20px 60px rgba(0,0,0,.6); overflow:hidden;
+  }
+  .f-line{ position:absolute; border:2px solid rgba(238,243,232,.5); }
+  .player-slot{
+    position:absolute; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; gap:3px;
+    cursor:pointer;
+  }
+  .player-face{
+    width:44px; height:44px; border-radius:50%; background:linear-gradient(150deg,#4a4a4a,#1a1a1a);
+    border:2px solid var(--gold); display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-size:15px; font-weight:700; color:var(--gold);
+    box-shadow:0 4px 10px rgba(0,0,0,.5);
+  }
+  .player-slot.gk .player-face{ border-color:#e5c15a; }
+  .player-name{ font-size:10.5px; background:rgba(8,19,12,.85); padding:2px 6px; border-radius:3px; white-space:nowrap; }
+  .player-slot:hover .player-face{ transform:scale(1.08); }
+
+  /* ---------- FORMATION PICKER MODAL ---------- */
+  .modal{
+    position:absolute; inset:0; background:rgba(4,10,6,.78); display:none; align-items:center; justify-content:center; z-index:30;
+  }
+  .modal.active{ display:flex; }
+  .formation-panel{
+    width:min(760px,90vw); max-height:82vh; background:var(--panel); border:1px solid rgba(238,243,232,.14);
+    border-radius:8px; padding:24px; overflow:hidden; display:flex; flex-direction:column;
+  }
+  .formation-panel h3{ font-family:var(--font-display); font-size:20px; margin-bottom:16px; }
+  .formation-grid{ overflow-y:auto; display:grid; grid-template-columns:repeat(3,1fr); gap:16px; padding-right:6px; }
+  .formation-card{
+    background:var(--panel-2); border:1px solid rgba(238,243,232,.1); border-radius:6px; padding:12px; cursor:pointer;
+    text-align:center; transition:border-color .15s ease;
+  }
+  .formation-card:hover{ border-color:var(--gold); }
+  .formation-card .mini-pitch{ width:100%; aspect-ratio:68/100; background:#173d24; border-radius:3px; position:relative; margin-bottom:8px; }
+  .formation-card .dot{ position:absolute; width:9%; aspect-ratio:1; border-radius:50%; background:var(--gold); transform:translate(-50%,-50%); }
+  .formation-card .f-name{ font-family:var(--font-mono); font-size:12px; color:var(--chalk); }
+
+  .close-x{ position:absolute; top:16px; right:20px; background:none; border:none; color:#9fb09e; font-size:20px; cursor:pointer; }
+  .top-close{ background:none; border:1px solid rgba(238,243,232,.18); color:var(--chalk); border-radius:5px; padding:8px 16px; cursor:pointer; font-family:var(--font-body); font-size:13px;}
+  .top-close:hover{ border-color:var(--gold); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ MAIN MENU ============ -->
+  <section id="menu-screen" class="screen active">
+    <div class="menu-eyebrow">WEB SOCCER PROTOTYPE</div>
+    <div class="menu-title">알까기 <span>FC</span></div>
+    <div class="menu-sub">경기 시작 전, 플레이 방식을 선택하세요</div>
+    <div class="mode-row">
+      <div class="mode-card" tabindex="0" onclick="startMatch()">
+        <div class="mode-num">01 · DIRECT</div>
+        <div class="mode-name">직접 플레이</div>
+        <div class="mode-desc">WASD로 이동하고 마우스로 슛·패스·태클을 직접 조작합니다.</div>
+        <div class="mode-stone stone-b"></div>
+      </div>
+      <div class="mode-card" tabindex="0" onclick="startMatch()">
+        <div class="mode-num">02 · WATCH</div>
+        <div class="mode-name">관전 모드</div>
+        <div class="mode-desc">AI 시뮬레이션으로 진행되는 경기를 지켜봅니다.</div>
+        <div class="mode-stone stone-w"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MATCH SCREEN ============ -->
+  <section id="match-screen" class="screen">
+    <div class="scorebar">
+      <div class="team-block home">아인드링 <div class="badge home-badge"></div></div>
+      <div class="score-center">
+        <div class="score-num" id="home-score">0</div>
+        <div class="clock" id="match-clock">28:59</div>
+        <div class="score-num" id="away-score">1</div>
+      </div>
+      <div class="team-block away"><div class="badge away-badge"></div> 맨유</div>
+    </div>
+
+    <div class="pitch-wrap">
+      <div id="pitch">
+        <div class="pitch-line" style="top:0;left:0;right:0;height:0;"></div>
+        <div class="pitch-line" style="left:50%;top:0;bottom:0;width:0;"></div>
+        <div class="pitch-line" style="left:50%;top:50%;width:16%;height:16%;border-radius:50%;transform:translate(-50%,-50%);"></div>
+        <div class="pitch-line" style="left:0;top:30%;width:14%;height:40%;border-left:none;"></div>
+        <div class="pitch-line" style="right:0;top:30%;width:14%;height:40%;border-right:none;"></div>
+        <!-- stones injected by JS -->
+      </div>
+    </div>
+
+    <div class="hint-bar">
+      <span><kbd>WASD</kbd> 이동</span>
+      <span><kbd>Ctrl</kbd> 선수 변경</span>
+      <span><kbd>Shift</kbd> 스프린트</span>
+      <span><kbd>LMB</kbd> 슛 / 태클</span>
+      <span><kbd>RMB</kbd> 패스 / 슬라이딩</span>
+      <span><kbd>MMB</kbd>+클릭 로빙·칩슛</span>
+      <span><kbd>Space</kbd>+RMB 스루패스</span>
+      <span><kbd>Esc</kbd> 메뉴</span>
+    </div>
+
+    <!-- ===== PAUSE OVERLAY ===== -->
+    <div class="overlay" id="pause-overlay">
+      <div class="pause-panel">
+        <div class="pause-header">
+          <div class="pause-title">일시정지</div>
+          <div class="pause-score">아인드링 0 — 1 맨유 · 28:59</div>
+        </div>
+        <div class="pause-body">
+          <div class="stat-row">
+            <div class="stat-val left" id="s-poss-h">54%</div>
+            <div class="stat-label">점유율</div>
+            <div class="stat-val right" id="s-poss-a">46%</div>
+            <div class="stat-bar"><div class="stat-bar-fill" style="width:54%"></div></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">11</div>
+            <div class="stat-label">슈팅 (유효)</div>
+            <div class="stat-val right">7</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">4</div>
+            <div class="stat-label">유효 슈팅</div>
+            <div class="stat-val right">3</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">86%</div>
+            <div class="stat-label">패스 성공률</div>
+            <div class="stat-val right">81%</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">6</div>
+            <div class="stat-label">코너킥</div>
+            <div class="stat-val right">3</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">2</div>
+            <div class="stat-label">오프사이드</div>
+            <div class="stat-val right">1</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">9</div>
+            <div class="stat-label">파울</div>
+            <div class="stat-val right">12</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">1 <span style="color:#e5c15a">■</span></div>
+            <div class="stat-label">경고 / 퇴장</div>
+            <div class="stat-val right">2 <span style="color:#e5c15a">■</span></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-val left">68%</div>
+            <div class="stat-label">태클 성공률</div>
+            <div class="stat-val right">72%</div>
+          </div>
+
+          <div class="pause-actions">
+            <button class="btn primary" onclick="closePause()">경기 재개</button>
+            <button class="btn" onclick="openLineup()">팀 라인업</button>
+            <button class="btn" onclick="restartMatch()">경기 재시작</button>
+            <button class="btn danger" onclick="endMatch()">경기 종료</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LINEUP SCREEN ============ -->
+  <section id="lineup-screen" class="screen">
+    <div class="lineup-top">
+      <div class="lineup-title">팀 라인업 — 아인드링</div>
+      <button class="top-close" onclick="closeLineup()">닫기 (Esc)</button>
+    </div>
+    <div class="lineup-body">
+      <div class="side-col left">
+        <button class="side-btn" onclick="openFormationPicker()">
+          포메이션 지정
+          <small id="current-formation">현재: 4-1-2-3</small>
+        </button>
+      </div>
+
+      <div class="pitch-center">
+        <div id="formation-pitch">
+          <div class="f-line" style="top:0;left:0;right:0;height:0;"></div>
+          <div class="f-line" style="top:50%;left:0;right:0;height:0;"></div>
+          <div class="f-line" style="top:50%;left:50%;width:22%;height:14%;border-radius:50%;transform:translate(-50%,-50%);"></div>
+          <!-- slots injected by JS -->
+        </div>
+      </div>
+
+      <div class="side-col right">
+        <div style="font-family:var(--font-mono); font-size:11px; color:#9fb09e; letter-spacing:.05em; margin-bottom:4px;">선수 교체 — 벤치</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 12 · GK</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 13 · CB</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 14 · CM</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 15 · LM</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 16 · RW</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 17 · ST</div>
+        <div class="bench-item"><div class="bench-avatar"></div>선수 18 · CB</div>
+      </div>
+    </div>
+
+    <!-- ===== FORMATION PICKER MODAL ===== -->
+    <div class="modal" id="formation-modal">
+      <div class="formation-panel" style="position:relative;">
+        <button class="close-x" onclick="closeFormationPicker()">✕</button>
+        <h3>포메이션 선택</h3>
+        <div class="formation-grid" id="formation-grid"></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ---------------- MATCH STONES (demo positions, team colors as go stones) ---------------- */
+const stones = [
+  // black = home team, white = away team, plus GK markers
+  {x:5,y:50,t:'black'},{x:16,y:22,t:'black'},{x:16,y:42,t:'black'},{x:16,y:58,t:'black'},{x:16,y:80,t:'black'},
+  {x:34,y:35,t:'black'},{x:34,y:50,t:'black',c:true},{x:34,y:65,t:'black'},
+  {x:52,y:28,t:'black'},{x:52,y:50,t:'black'},{x:52,y:72,t:'black'},
+  {x:95,y:50,t:'white'},{x:84,y:22,t:'white'},{x:84,y:42,t:'white'},{x:84,y:58,t:'white'},{x:84,y:80,t:'white'},
+  {x:66,y:35,t:'white'},{x:66,y:50,t:'white'},{x:66,y:65,t:'white'},
+  {x:48,y:44,t:'white'},{x:60,y:52,t:'white'},
+];
+
+function renderPitch(){
+  const pitch = document.getElementById('pitch');
+  stones.forEach(s=>{
+    const el = document.createElement('div');
+    el.className = 'stone ' + s.t + (s.c ? ' controlled' : '');
+    el.style.left = s.x+'%';
+    el.style.top = s.y+'%';
+    pitch.appendChild(el);
+  });
+  const ball = document.createElement('div');
+  ball.className='ball';
+  ball.style.left='50%'; ball.style.top='50%';
+  pitch.appendChild(ball);
+}
+renderPitch();
+
+/* ---------------- SCREEN NAV ---------------- */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function startMatch(){ showScreen('match-screen'); }
+function endMatch(){ closePause(); showScreen('menu-screen'); }
+function restartMatch(){ closePause(); }
+
+/* ---------------- PAUSE MENU ---------------- */
+function openPause(){ document.getElementById('pause-overlay').classList.add('active'); }
+function closePause(){ document.getElementById('pause-overlay').classList.remove('active'); }
+
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Escape'){
+    if(document.getElementById('lineup-screen').classList.contains('active')){
+      closeLineup();
+    } else if(document.getElementById('match-screen').classList.contains('active')){
+      const pause = document.getElementById('pause-overlay');
+      pause.classList.contains('active') ? closePause() : openPause();
+    }
+  }
+});
+
+/* ---------------- LINEUP SCREEN ---------------- */
+const formationSlots = [
+  {pos:'GK', num:1, x:50, y:92, gk:true},
+  {pos:'LWB', num:17, x:12, y:74},
+  {pos:'LCB', num:19, x:36, y:80},
+  {pos:'RCB', num:16, x:64, y:80},
+  {pos:'RWB', num:18, x:88, y:74},
+  {pos:'CDM', num:22, x:50, y:60},
+  {pos:'LM', num:16, x:22, y:42},
+  {pos:'RM', num:18, x:78, y:42},
+  {pos:'LS', num:19, x:30, y:20},
+  {pos:'ST', num:10, x:50, y:14},
+  {pos:'RS', num:22, x:70, y:20},
+];
+
+function renderFormation(){
+  const pitch = document.getElementById('formation-pitch');
+  pitch.querySelectorAll('.player-slot').forEach(n=>n.remove());
+  formationSlots.forEach(p=>{
+    const slot = document.createElement('div');
+    slot.className = 'player-slot' + (p.gk ? ' gk':'');
+    slot.style.left = p.x+'%';
+    slot.style.top = p.y+'%';
+    slot.innerHTML = `<div class="player-face">${p.num}</div><div class="player-name">${p.pos}</div>`;
+    pitch.appendChild(slot);
+  });
+}
+renderFormation();
+
+function openLineup(){ closePause(); showScreen('lineup-screen'); }
+function closeLineup(){ showScreen('match-screen'); }
+
+/* ---------------- FORMATION PICKER ---------------- */
+const formationNames = ['4-1-2-3','4-4-2','4-3-3','3-5-2','4-2-3-1','5-3-2','3-4-3','4-1-4-1','4-4-1-1'];
+function buildFormationGrid(){
+  const grid = document.getElementById('formation-grid');
+  grid.innerHTML='';
+  formationNames.forEach(name=>{
+    const card = document.createElement('div');
+    card.className='formation-card';
+    card.onclick = ()=>{ document.getElementById('current-formation').textContent = '현재: '+name; closeFormationPicker(); };
+    const dots = Array.from({length:7}, (_,i)=>{
+      const x = 15 + (i*11)%70 + (i%3)*5;
+      const y = 12 + Math.floor(i/2.3)*18;
+      return `<div class="dot" style="left:${x}%; top:${y}%;"></div>`;
+    }).join('');
+    card.innerHTML = `<div class="mini-pitch">${dots}</div><div class="f-name">${name}</div>`;
+    grid.appendChild(card);
+  });
+}
+buildFormationGrid();
+function openFormationPicker(){ document.getElementById('formation-modal').classList.add('active'); }
+function closeFormationPicker(){ document.getElementById('formation-modal').classList.remove('active'); }
+</script>
+</body>
+</html>
