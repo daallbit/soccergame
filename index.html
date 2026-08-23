@@ -114,18 +114,35 @@
     box-shadow:0 20px 60px rgba(0,0,0,.6);
   }
   .pitch-line{ position:absolute; border:2px solid rgba(238,243,232,.55); }
+  .goal-mouth{
+    position:absolute; top:41%; height:18%; width:1.4%;
+    background:repeating-linear-gradient(45deg, rgba(238,243,232,.4) 0 2px, transparent 2px 7px);
+    border:2px solid rgba(238,243,232,.8); z-index:2;
+  }
+  .goal-mouth.left{ left:0; border-right:none; }
+  .goal-mouth.right{ right:0; border-left:none; }
+  .countdown-overlay{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(4,10,6,.55); z-index:15; border-radius:3px;
+  }
+  .countdown-overlay.active{ display:flex; }
+  .countdown-num{
+    font-family:var(--font-display); font-weight:700; font-size:clamp(80px,12vw,150px); color:var(--gold);
+    text-shadow:0 10px 40px rgba(0,0,0,.6); animation:countPulse .9s ease;
+  }
+  @keyframes countPulse{ from{ transform:scale(1.6); opacity:0;} to{ transform:scale(1); opacity:1;} }
   .stone{
     position:absolute; width:3.4%; aspect-ratio:1; border-radius:50%; transform:translate(-50%,-50%);
-    transition:left .5s linear, top .5s linear;
     display:flex; align-items:center; justify-content:center;
     font-family:var(--font-mono); font-size:9px; font-weight:700;
+    will-change:left, top;
   }
   .stone.black{ background:radial-gradient(circle at 32% 28%, var(--stone-black-hi), var(--stone-black) 65%); box-shadow: inset 0 -3px 4px rgba(0,0,0,.6), 0 2px 6px rgba(0,0,0,.6); color:#e6c976;}
   .stone.white{ background:radial-gradient(circle at 32% 28%, #fff, var(--stone-white-sh) 75%); box-shadow: inset 0 -2px 4px rgba(0,0,0,.15), 0 2px 6px rgba(0,0,0,.6); color:#7a3d2c;}
   .stone.controlled{ outline:2px solid var(--gold); outline-offset:2px; box-shadow:0 0 12px 2px rgba(217,164,65,.75); }
   .ball{
     position:absolute; width:1.5%; aspect-ratio:1; border-radius:50%; background:radial-gradient(circle at 32% 28%,#fff,#d8d2bd 70%);
-    transform:translate(-50%,-50%); box-shadow:0 2px 5px rgba(0,0,0,.6); transition:left .5s linear, top .5s linear;
+    transform:translate(-50%,-50%); box-shadow:0 2px 5px rgba(0,0,0,.6); will-change:left, top;
   }
 
   .hint-bar{
@@ -254,13 +271,13 @@
     <div class="menu-title">알까기 <span>FC</span></div>
     <div class="menu-sub">경기 시작 전, 플레이 방식을 선택하세요</div>
     <div class="mode-row">
-      <div class="mode-card" tabindex="0" onclick="startMatch()">
+      <div class="mode-card" tabindex="0" onclick="startDirectPlay()">
         <div class="mode-num">01 · DIRECT</div>
         <div class="mode-name">직접 플레이</div>
         <div class="mode-desc">WASD로 이동하고 마우스로 슛·패스·태클을 직접 조작합니다.</div>
         <div class="mode-stone stone-b"></div>
       </div>
-      <div class="mode-card" tabindex="0" onclick="startMatch()">
+      <div class="mode-card" tabindex="0" onclick="startSpectate()">
         <div class="mode-num">02 · WATCH</div>
         <div class="mode-name">관전 모드</div>
         <div class="mode-desc">AI 시뮬레이션으로 진행되는 경기를 지켜봅니다.</div>
@@ -276,7 +293,7 @@
       <div class="score-center">
         <div class="score-num" id="home-score">0</div>
         <div class="clock" id="match-clock">28:59</div>
-        <div class="score-num" id="away-score">1</div>
+        <div class="score-num" id="away-score">0</div>
       </div>
       <div class="team-block away"><div class="badge away-badge"></div> 맨유</div>
     </div>
@@ -288,7 +305,12 @@
         <div class="pitch-line" style="left:50%;top:50%;width:16%;height:16%;border-radius:50%;transform:translate(-50%,-50%);"></div>
         <div class="pitch-line" style="left:0;top:30%;width:14%;height:40%;border-left:none;"></div>
         <div class="pitch-line" style="right:0;top:30%;width:14%;height:40%;border-right:none;"></div>
+        <div class="goal-mouth left"></div>
+        <div class="goal-mouth right"></div>
         <!-- stones injected by JS -->
+      </div>
+      <div class="countdown-overlay" id="countdown-overlay">
+        <div class="countdown-num" id="countdown-num">3</div>
       </div>
     </div>
 
@@ -428,30 +450,251 @@ const stones = [
   {x:48,y:44,t:'white'},{x:60,y:52,t:'white'},
 ];
 
+let ballState = {x:50, y:50, vx:0, vy:0};
+let ballEl = null;
+let controlledIndex = 0;
+let directPlayMode = true;
+let matchStarted = false;
+let homeScore = 0, awayScore = 0;
+const initialStones = JSON.parse(JSON.stringify(stones));
+
 function renderPitch(){
   const pitch = document.getElementById('pitch');
-  stones.forEach(s=>{
+  stones.forEach((s,i)=>{
     const el = document.createElement('div');
     el.className = 'stone ' + s.t + (s.c ? ' controlled' : '');
     el.style.left = s.x+'%';
     el.style.top = s.y+'%';
     pitch.appendChild(el);
+    s.vx = 0; s.vy = 0;
+    s.homeX = s.x; s.homeY = s.y;
+    s.el = el;
+    if(s.c) controlledIndex = i;
   });
-  const ball = document.createElement('div');
-  ball.className='ball';
-  ball.style.left='50%'; ball.style.top='50%';
-  pitch.appendChild(ball);
+  ballEl = document.createElement('div');
+  ballEl.className='ball';
+  ballEl.style.left='50%'; ballEl.style.top='50%';
+  pitch.appendChild(ballEl);
 }
 renderPitch();
+
+function resetKickoff(){
+  stones.forEach((s,i)=>{
+    const init = initialStones[i];
+    s.x = init.x; s.y = init.y; s.vx = 0; s.vy = 0;
+    s.el.style.left = s.x+'%';
+    s.el.style.top = s.y+'%';
+  });
+  ballState.x = 50; ballState.y = 50; ballState.vx = 0; ballState.vy = 0;
+  ballEl.style.left='50%'; ballEl.style.top='50%';
+}
+
+function runCountdown(cb){
+  const overlay = document.getElementById('countdown-overlay');
+  const numEl = document.getElementById('countdown-num');
+  overlay.classList.add('active');
+  let n = 3;
+  numEl.textContent = n;
+  const timer = setInterval(()=>{
+    n--;
+    if(n > 0){
+      numEl.textContent = n;
+      numEl.style.animation='none'; void numEl.offsetWidth; numEl.style.animation='countPulse .9s ease';
+    } else {
+      clearInterval(timer);
+      overlay.classList.remove('active');
+      cb && cb();
+    }
+  }, 1000);
+}
+
+function scoreGoal(who){
+  if(who==='home') homeScore++; else awayScore++;
+  document.getElementById('home-score').textContent = homeScore;
+  document.getElementById('away-score').textContent = awayScore;
+  matchStarted = false;
+  resetKickoff();
+  if(directPlayMode){
+    runCountdown(()=>{ matchStarted = true; });
+  } else {
+    setTimeout(()=>{ matchStarted = true; }, 600);
+  }
+}
+
+function checkGoal(){
+  if(!matchStarted) return;
+  if(ballState.x <= 2 && ballState.y > 41 && ballState.y < 59){
+    scoreGoal('away');
+  } else if(ballState.x >= 98 && ballState.y > 41 && ballState.y < 59){
+    scoreGoal('home');
+  }
+}
+
+/* ---------------- MOVEMENT ENGINE (버튼 축구 느낌: 관성 있는 미끄러짐) ---------------- */
+const keys = {w:false, a:false, s:false, d:false, shift:false};
+const ACCEL = 0.055;        // 키를 누르고 있을 때 가속도
+const FRICTION = 0.90;      // 뗐을 때 감속 (관성으로 미끄러지는 느낌)
+const MAX_SPEED = 0.62;     // 기본 최고 속도 (%/frame)
+const SPRINT_MULT = 1.7;    // Shift 스프린트 배수
+const PITCH_MARGIN = 2.2;
+
+function homeTeamIndices(){
+  return stones.map((s,i)=>({s,i})).filter(o=>o.s.t==='black').map(o=>o.i);
+}
+
+function cycleControlled(){
+  const idxs = homeTeamIndices();
+  const pos = idxs.indexOf(controlledIndex);
+  const next = idxs[(pos+1) % idxs.length];
+  stones[controlledIndex].el.classList.remove('controlled');
+  controlledIndex = next;
+  stones[controlledIndex].el.classList.add('controlled');
+}
+
+window.addEventListener('keydown', (e)=>{
+  const matchActive = document.getElementById('match-screen').classList.contains('active');
+  const pauseOpen = document.getElementById('pause-overlay').classList.contains('active');
+  if(!matchActive || pauseOpen || !directPlayMode || !matchStarted || controlledIndex === -1) return;
+  const k = e.key.toLowerCase();
+  if(k==='w'||k==='a'||k==='s'||k==='d') keys[k]=true;
+  if(k==='shift') keys.shift=true;
+  if(k==='control'){ e.preventDefault(); cycleControlled(); }
+});
+window.addEventListener('keyup', (e)=>{
+  const k = e.key.toLowerCase();
+  if(k==='w'||k==='a'||k==='s'||k==='d') keys[k]=false;
+  if(k==='shift') keys.shift=false;
+});
+
+const AI_CHASE_RADIUS = 24;   // 이 거리 안이면 공을 향해 이동
+const AI_SPEED = 0.20;        // AI 기본 이동 속도
+const AI_HOME_PULL = 0.10;    // 공이 멀면 원래 자리로 복귀하는 속도
+
+function updateAI(s){
+  const toBallX = ballState.x - s.x;
+  const toBallY = ballState.y - s.y;
+  const distBall = Math.hypot(toBallX, toBallY);
+
+  let targetX, targetY, spd;
+  if(distBall < AI_CHASE_RADIUS){
+    targetX = ballState.x; targetY = ballState.y; spd = AI_SPEED;
+  } else {
+    targetX = s.homeX; targetY = s.homeY; spd = AI_HOME_PULL;
+  }
+
+  const dx = targetX - s.x, dy = targetY - s.y;
+  const d = Math.hypot(dx, dy);
+  if(d > 0.6){
+    s.vx = (dx/d) * spd;
+    s.vy = (dy/d) * spd;
+  } else {
+    s.vx = 0; s.vy = 0;
+  }
+  s.x = Math.min(100-PITCH_MARGIN, Math.max(PITCH_MARGIN, s.x + s.vx));
+  s.y = Math.min(100-PITCH_MARGIN, Math.max(PITCH_MARGIN, s.y + s.vy));
+  s.el.style.left = s.x+'%';
+  s.el.style.top = s.y+'%';
+
+  // 공 근처면 살짝 밀어주기 (AI 드리블/패스 느낌)
+  if(distBall < 3 && distBall < AI_CHASE_RADIUS){
+    ballState.vx += s.vx * 0.3;
+    ballState.vy += s.vy * 0.3;
+  }
+}
+
+function step(){
+  const matchActive = document.getElementById('match-screen').classList.contains('active');
+  const pauseOpen = document.getElementById('pause-overlay').classList.contains('active');
+  const lineupActive = document.getElementById('lineup-screen').classList.contains('active');
+
+  if(matchActive && !pauseOpen && !lineupActive && matchStarted){
+    stones.forEach((s,i)=>{
+      if(directPlayMode && i === controlledIndex){
+        const cs = s;
+        let ax = (keys.d?1:0) - (keys.a?1:0);
+        let ay = (keys.s?1:0) - (keys.w?1:0);
+        const mag = Math.hypot(ax,ay);
+        if(mag > 0){ ax/=mag; ay/=mag; }
+        const speedCap = MAX_SPEED * (keys.shift ? SPRINT_MULT : 1);
+
+        cs.vx += ax * ACCEL * (keys.shift ? SPRINT_MULT : 1);
+        cs.vy += ay * ACCEL * (keys.shift ? SPRINT_MULT : 1);
+
+        // 관성 감속 (버튼 축구처럼 미끄러지듯 멈춤)
+        cs.vx *= FRICTION;
+        cs.vy *= FRICTION;
+
+        const curSpeed = Math.hypot(cs.vx, cs.vy);
+        if(curSpeed > speedCap){
+          cs.vx = (cs.vx/curSpeed) * speedCap;
+          cs.vy = (cs.vy/curSpeed) * speedCap;
+        }
+
+        cs.x = Math.min(100-PITCH_MARGIN, Math.max(PITCH_MARGIN, cs.x + cs.vx));
+        cs.y = Math.min(100-PITCH_MARGIN, Math.max(PITCH_MARGIN, cs.y + cs.vy));
+        cs.el.style.left = cs.x+'%';
+        cs.el.style.top = cs.y+'%';
+
+        // 공 근처에 있으면 살짝 밀어주기 (드리블 느낌)
+        const dx = ballState.x - cs.x, dy = ballState.y - cs.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist < 3.2 && curSpeed > 0.02){
+          ballState.vx += cs.vx * 0.35;
+          ballState.vy += cs.vy * 0.35;
+        }
+      } else {
+        updateAI(s);
+      }
+    });
+  }
+
+  // 공 물리 (관성 + 마찰)
+  ballState.vx *= 0.94;
+  ballState.vy *= 0.94;
+  ballState.x = Math.min(100-1, Math.max(1, ballState.x + ballState.vx));
+  ballState.y = Math.min(100-1, Math.max(1, ballState.y + ballState.vy));
+  ballEl.style.left = ballState.x+'%';
+  ballEl.style.top = ballState.y+'%';
+
+  checkGoal();
+  requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
 
 /* ---------------- SCREEN NAV ---------------- */
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-function startMatch(){ showScreen('match-screen'); }
-function endMatch(){ closePause(); showScreen('menu-screen'); }
-function restartMatch(){ closePause(); }
+function startDirectPlay(){
+  directPlayMode = true;
+  matchStarted = false;
+  showScreen('match-screen');
+  resetKickoff();
+  if(!stones[controlledIndex].el.classList.contains('controlled')){
+    stones[controlledIndex].el.classList.add('controlled');
+  }
+  runCountdown(()=>{ matchStarted = true; });
+}
+function startSpectate(){
+  directPlayMode = false;
+  controlledIndex = -1;
+  stones.forEach(s=>s.el.classList.remove('controlled'));
+  showScreen('match-screen');
+  resetKickoff();
+  matchStarted = false;
+  runCountdown(()=>{ matchStarted = true; });
+}
+function endMatch(){ closePause(); matchStarted = false; showScreen('menu-screen'); }
+function restartMatch(){
+  closePause();
+  homeScore = 0; awayScore = 0;
+  document.getElementById('home-score').textContent = 0;
+  document.getElementById('away-score').textContent = 0;
+  matchStarted = false;
+  resetKickoff();
+  runCountdown(()=>{ matchStarted = true; });
+}
 
 /* ---------------- PAUSE MENU ---------------- */
 function openPause(){ document.getElementById('pause-overlay').classList.add('active'); }
